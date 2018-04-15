@@ -1,0 +1,435 @@
+---
+title: "PAC1"
+author: "Albert Costas Gutierrez"
+date: '`r format(Sys.Date(),"%e de %B %Y")`'
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load_libraries, include=FALSE}
+library(knitr)
+library(lubridate)
+library(VIM)
+library(stringr)
+library(psych)
+library(gsubfn)
+library(stringi)
+```
+
+****
+# Carregar el fitxer de dades en R
+****
+
+En obrir el fitxer amb un editor de text senzill com el bloc de notes, gedit o VIM per Linux. Llavors es pot veure que "," és el símbol separador i el punt la coma decimal, a més del caràcter de quota ". Per tant s'ha de llegir el fitxer amb la funció `read.csv2(file = "2016_raw.csv", header = TRUE, sep = ",", quote = "\"", dec = ",", fill = TRUE)`
+
+
+```{r lectura, echo=FALSE}
+# Carregar el fitxer de dades en R
+mydata <- read.csv2(file = "2016_raw.csv", header = TRUE, sep = ",", quote = "\"", dec = ".", fill = TRUE, encoding="UTF-8")
+n.var <- names(mydata)
+# breu resumen dels atributs
+kable(head(mydata, n=5))
+```
+
+El fitxer de dades recull informació sobre regions de diversos països, disposem d'atributs relatius el rank i la puntuació de la facilitat, la renda per capita, expectativa de vida, corrupció, ...
+
+Conté `r nrow(mydata)` registres i  `r ncol(mydata)` variables. 
+Les variables són `r toString(n.var)`.
+
+
+```{r listat_de_noms, eval=FALSE, echo=FALSE}
+# nom de les variables
+kable(names(mydata))
+
+
+toString(names(mydata))
+```
+
+****
+# Canviar els noms de les variables
+****
+
+```{r cambiar_nom_atributs}
+
+defineAtribute <- function(atribute) {
+  textSplited <- strsplit(atribute, "[.]")[[1]]
+  if (1 < length(textSplited)) {
+    atributeFinal <- ""
+    for (item in textSplited) {
+      atributeFinal <-
+        paste(atributeFinal, toupper(substr(item, 1, 1)), sep = "")
+    }
+    atributeFinal
+  } else {
+    atribute
+  }
+}
+
+iterator <- 1
+for (item in names(mydata)) {
+  names(mydata)[iterator] <- print(defineAtribute(item))
+  iterator <- iterator + 1
+}
+
+kable(names(mydata))
+
+
+toString(names(mydata))
+
+```
+
+
+****
+# Indicar el tipus de variable estadástica en cada variable
+****
+
+Són variables qualitatives nominals, ja que no es poden ordenar: `r toString(n.var[c(1,2)])`
+
+Són variables quantitatives discretes, són nombres enters en aquest cas el rang de felicitat: `r toString(n.var[c(3)])`
+
+Són variables quantitatives contínues, es tracta de números amb decimals: `r toString(n.var[c(4,7,5,6,8,9,10,11,12,13)])`
+
+
+****
+# Assignar a cada variable el tipus de variable R adequat
+****
+
+Quan llegim el fitxer amb la funció `read.csv2()` podem veure que els formats coincideixen amb els que em definit anteriorment, menys HR i HPC
+
+Per tant hem de corregir, l'assignació a realitzar és:
+```{r}
+
+kable(data.frame(variables= n.var[c(4,7)], clase= c("numeric", "numeric")))
+
+res <- sapply(mydata,class)
+kable(data.frame(variables=names(res),clase=as.vector(res)))
+toString(data.frame(variables=names(res),clase=as.vector(res)))
+```
+
+****
+# Corregir errors de variables quantitatives amb confusió de separador decimal.
+****
+
+Pel que fa a les variables quantitatives si hi ha una confusió del separador decimal, alguns registres hem vist que tenen comà en lloc de punt.
+
+```{r punts_i_comes}
+# Passa tot a . decimal que entán R
+# quan es guardi com a csv2 quedarà com , decimal
+mydata$HS <- as.numeric(sub(",", "\\.", mydata$HS))
+mydata$LCI <- as.numeric(sub(",", "\\.", mydata$LCI))
+mydata$UCI <- as.numeric(sub(",", "\\.", mydata$UCI))
+mydata$GPC <- as.numeric(sub(",", "\\.", mydata$GPC))
+mydata$Family <- as.numeric(sub(",", "\\.", mydata$Family))
+mydata$LE <- as.numeric(sub(",", "\\.", mydata$LE))
+mydata$Freedom <- as.numeric(sub(",", "\\.", mydata$Freedom))
+mydata$GC <-  as.numeric(sub(",", "\\.", mydata$GC))
+mydata$Generosity <- as.numeric(sub(",", "\\.", mydata$Generosity))
+mydata$DR <- as.numeric(sub(",", "\\.", mydata$DR))
+
+summary(mydata)
+kable(head(mydata, n = 5))
+```
+Podem veure que ara tenim unificats tots els separadors decimals.
+
+****
+# Normalitzar/Estandarditzar variables qualitatives.
+****
+
+Primer eliminen els primers espais en blanc al principi i al final:
+```{r sense_espais_en_blanc}
+# Treure espai abans i després
+mydata$Country <- trimws(mydata$Country)
+mydata$Region <- trimws(mydata$Region)
+```
+
+Normalitzem la primera lletra de cada paraula en majúscules i la resta en minúscules.
+```{r primer_en_mayuscula_!}
+
+
+simpleCap <- function(x) {
+  split_words <- strsplit(x, " ", fixed = TRUE)
+  v <- c()
+  for (word in split_words) {
+    word = trimws(word)
+    if (!is.null(word) && word != "") {
+      v <- sapply(str_to_lower(word), upper_word)
+    }
+  }
+  v =  v [!v == '']
+  paste(v,  collapse = ' ')
+}
+
+upper_word <- function(x) {
+  if (x != 'and')
+    return(str_to_title(str_to_lower(x)))
+  else
+    return(str_to_lower(x))
+}
+
+mydata$Country = sapply(mydata$Country, simpleCap)
+mydata$Region = sapply(mydata$Region, simpleCap)
+
+kable(head(mydata$Country, n = 10))
+kable(table(mydata$Region))
+```
+
+Podem veure que hi ha diverses faltes ortogràfiques, que afecten la feculència d'una zona, així com els diversos espais en blanc que podem alterar també la freqüència i obtenir resultat erronis, els corregim:
+```{r error_names_country!}
+fixed_mistakes <- function(x) {
+  word_with_mistake <- list('Afrca' = 'Africa')
+  
+  word_change <- function(word) {
+    if (!is.null(word_with_mistake[[word]])) {
+      word_with_mistake[[word]]
+    } else{
+      word
+    }
+  }
+  
+  split_words <- strsplit(x, " ", fixed = TRUE)
+  v <- c()
+  for (word in split_words) {
+    word = trimws(word)
+    if (!is.null(word) && word != "") {
+      v <- sapply(stri_encode(word), word_change)
+    }
+  }
+  v =  v [!v == '']
+  paste(v,  collapse = ' ')
+  
+}
+
+mydata$Region = sapply(mydata$Region, fixed_mistakes)
+
+kable(table(mydata$Region))
+print(table(mydata$Region))
+```
+Les 2 funcions anteriors podríem unificar-les en 1 per no iterar 2 cops, si tinguéssim moltes dades, però en aquest la quantitat de registres o mostres no resulta un cost elevat de computació.
+
+****
+# Revisar possibles inconsistències entre variables.
+****
+
+## Lower.Confidence.Interval vs Upper.Confidence.Interval
+```{r incon_sistencia_LCI_contra_UCI}
+indices <- which(mydata$LCI >  mydata$UCI)
+tmp <- mydata[indices, ]$UCI
+mydata[indices, ]$UCI <- mydata[indices, ]$LCI
+mydata[indices, ]$LCI <- tmp
+
+
+head(mydata[, 5:6])
+
+```
+
+## Ordenació per atribut HS y renombrament l'atribut HR amb l'ordre del HS.
+
+Realitzem un quadre amb les estimacions robustes i no robustes de tendència central i dispersió per a cada variable quantitativa:
+```{r HS vrs HR}
+#Ordenamos
+mydata <- mydata[order(mydata[, "HS"], decreasing = T), ]
+
+#renombramos
+iterator <- 1
+for (item in mydata$HR) {
+  mydata$HR[iterator] <- iterator
+  iterator <- iterator + 1
+  
+}
+
+head(mydata[, 3:4])
+```
+
+****
+# Buscar valors atípics en les variables quantitatives
+****
+
+## Presemtem un boxplot per cada variable quantitativa
+```{r Boxplot}
+n=12 #colors
+par(mfrow=c(2,2))
+boxplot(mydata[,3], main=names(mydata)[3], col=topo.colors(n))
+boxplot(mydata[,4], main=names(mydata)[4], col=topo.colors(n))
+boxplot(mydata[,5], main=names(mydata)[5], col=topo.colors(n))
+boxplot(mydata[,6], main=names(mydata)[6], col=topo.colors(n))
+
+boxplot(mydata[,7], main=names(mydata)[7], col=topo.colors(n))
+boxplot(mydata[,8], main=names(mydata)[8], col=topo.colors(n))
+boxplot(mydata[,9], main=names(mydata)[9], col=topo.colors(n))
+boxplot(mydata[,10], main=names(mydata)[10], col=topo.colors(n))
+boxplot(mydata[,11], main=names(mydata)[11], col=topo.colors(n))
+boxplot(mydata[,12], main=names(mydata)[12], col=topo.colors(n))
+boxplot(mydata[,13], main=names(mydata)[13], col=topo.colors(n))
+
+```
+
+## Quadre amb les estimacions 
+
+Realitzem un quadre amb les estimacions robustes i no robustes de tendència central i dispersió per a cada variable quantitativa:
+```{r estimacions}
+
+mean.n <- as.vector(sapply(mydata[, 3:13], mean, na.rm = TRUE))
+std.n <- as.vector(sapply(mydata[, 3:13], sd, na.rm = TRUE))
+median.n <- as.vector(sapply(mydata[, 3:13], median, na.rm = TRUE))
+mean.trim.0.05 <-
+  as.vector(sapply(mydata[, 3:13], mean, na.rm = TRUE, trim = 0.05))
+mean.winsor.0.05 <-
+  as.vector(sapply(mydata[, 3:13], winsor.mean, na.rm = TRUE, trim = 0.05))
+IQR.n <- as.vector(sapply(mydata[, 3:13], IQR, na.rm = TRUE))
+mad.n <- as.vector(sapply(mydata[, 3:13], mad, na.rm = TRUE))
+
+
+kable(
+  data.frame(
+    variables = names(mydata)[3:13],
+    Media = mean.n,
+    Mediana = median.n,
+    Media.recort.0.05 = mean.trim.0.05,
+    Media.winsor.0.05 = mean.winsor.0.05
+  ),
+  digits = 2,
+  caption = "Estimaciones de Tendencia Central"
+)
+
+
+kable(
+  data.frame(
+    variables = names(mydata)[3:13],
+    Desv.Standard = std.n,
+    IQR = IQR.n,
+    MAD = mad.n
+  ),
+  digits = 2,
+  caption = "Estimaciones de Dispersio"
+)
+
+```
+
+****
+# Valors perduts.
+****
+
+En la variable Família és on hi ha els valors perduts, podem veure que l'observació del valor perdut és la posició vuit, també com ja hem vist en les taules anteriors hi ha dos valors NA, el tercer i el setè.
+
+```{r valors perduts}
+v.p <-names(mydata)[!complete.cases(t(mydata))]
+v.p
+
+# Family
+
+v.p.p <- which(names(mydata)==v.p)
+v.p.p
+
+```
+
+Realitzem una imputació basada en KNN amb la distància Gover, assignat el valor calcular amb el KNN al grup de dades, en les posicions anteriors:
+
+```{r k-veins}
+
+mydata.complet <- kNN(mydata[,8:13])
+
+mydata[3,"Family"] <- mydata.complet[3,"Family"]
+mydata[7:8,"Family"] <- mydata.complet[7:8,"Family"]
+
+```
+
+
+****
+# Fer un breu estudi descriptiu de les dades una vegada depurades
+****
+
+Gràfic de tartà per les variables descriptives, en aquest cas sols sobre regió, ja que països la freqüència és d'1 de cada país:
+```{r descriptiva_qualitatives}
+options(knitr.kable.NA = '')
+
+kable(summary(mydata)[,c(1,2)],
+      digits=2, caption="Estadística descriptiva de variables qualitatives nominals")
+
+library(plotrix)
+
+labelsTable <- paste(names(mydata$Region), "\n", mydata$Region, sep="") 
+pie(table(factor(mydata$Region)),  labels = labelsTable, main="Despcripció atribut Regio", col=topo.colors(n))
+
+
+```
+
+
+Realitzem 2 taules dels països amb més qualitat de felicitats i amb menys, ordenament des de mes a menys i mostrem els 5 registres principals:
+```{r quantitativas_discretes}
+
+kable(summary(mydata)[,c(3)],
+      digits=2, caption="Estadística descriptiva de variables quantitativas discretes")
+
+#TOP 5 mes infeliços
+head(mydata[order(mydata[, "HR"], decreasing = F), ][,c(1,3)], n=5)
+
+#TOP 5mes feliços
+head(mydata[order(mydata[, "HR"], decreasing = T), ][,c(1,3)], n=5)
+
+```
+
+
+Sobre els atributs de variables quantitatives contínues creem diferents gràfics de barres:
+```{r quantitatives_continues}
+
+kable(summary(mydata)[,c(4,5,6,7,8,9,10,11,12,13)],
+      digits=2, caption="Estadística descriptiva de variables quantitativas contínues")
+
+barplot(mydata$HS, col=terrain.colors(n))
+title(main = "HS", font.main = 4)
+barplot(mydata$LCI, col=terrain.colors(n))
+title(main = "LCI", font.main = 4)
+barplot(mydata$UCI, col=terrain.colors(n))
+title(main = "UCI", font.main = 4)
+barplot(mydata$GPC, col=terrain.colors(n))
+title(main = "GPC", font.main = 4)
+barplot(mydata$Family, col=terrain.colors(n))
+title(main = "Family", font.main = 4)
+barplot(mydata$LE, col=terrain.colors(n))
+title(main = "LE", font.main = 4)
+barplot(mydata$Freedom, col=terrain.colors(n))
+title(main = "Freedom", font.main = 4)
+barplot(mydata$GC,col=terrain.colors(n))
+title(main = "GC", font.main = 4)
+barplot(mydata$Generosity, col=terrain.colors(n))
+title(main = "Generosity", font.main = 4)
+barplot(mydata$DR, col=terrain.colors(n))
+title(main = "DR", font.main = 4)
+
+```
+
+****
+# Crear l’arxiu de dades corregit.
+****
+
+Finalment, creem l’arxiu de dades corregit, el guardem amb el nom 2016_data_procesed.csv:
+
+```{r fitxer_csv}
+
+write.csv2(mydata, file="2016_data_procesed.csv", row.names = FALSE)
+
+```
+
+****
+# Bibliografia
+****
+
+* http://www.r-chart.com/2010/06/color-palettes-in-r.html
+* https://www.statmethods.net/graphs/boxplot.html
+* https://vitalflux.com/data-science-scale-normalize-numeric-data-using-r/
+* https://rstudio-pubs-static.s3.amazonaws.com/123438_3b9052ed40ec4cd2854b72d1aa154df9.html
+* https://idc9.github.io/stor390/notes/cross_validation/cross_validation.html
+
+
