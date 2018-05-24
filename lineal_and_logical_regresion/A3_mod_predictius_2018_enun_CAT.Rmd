@@ -1,0 +1,273 @@
+---
+title: "PAC2"
+author: "Albert Costas Gutierrez"
+date: '`r format(Sys.Date(),"%e de %B %Y")`'
+output:
+  html_document:
+    df_print: kable
+    fig_caption: yes
+    keep_md: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  pdf_document:
+    toc: yes
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load_libraries, include=FALSE}
+library(knitr)
+library(lubridate)
+library(VIM)
+library(stringr)
+library(psych)
+library(gsubfn)
+library(stringi)
+library(ggplot2)
+library(car)
+library(pROC)
+```
+
+Carregar el fitxer de dades en R
+
+Aquesta base de dades conté 157 registres i 13 variables. Les variables són Country, Region, HR, HS, LCI, UCI, GpC, Family, LE, Freedom, GC, Generosity i DR. Són les mateixes variables de l’activitat 1 i 2.
+
+A l'obrir el fitxer amb la funció `read.csv2(file = "2016_clean.csv", header = TRUE, sep = ",", quote = "\"", dec = ",", fill = TRUE)`
+
+
+```{r, echo=TRUE}
+# Carregar el fitxer de dades en R
+mydata <- read.csv2(file = "2016_clean.csv", header = TRUE, sep = ",", quote = "\"", dec = ".", fill = TRUE, encoding="UTF-8")
+n.var <- names(mydata)
+# breu resumen dels atributs
+head(mydata, n=5)
+```
+
+# Model de regressió lineal
+
+Primerament, estudiarem com canvia el nivell de felicitat en funció d’algunes característiques de cada país.
+
+## Model de regressió lineal múltiple (regressors quantitatius)
+
+Estimar per mínims quadrats ordinaris amb un model lineal que expliqui la puntuació de felicitat (HS) d’un país en funció de tres factors quantitatius: l’indicador de renda per càpita (GpC), l’esperança de vida en salut (LE) i la corrupció (GC).
+
+Mirar la bondat de l’ajust a través del coeficient de determinació ($R^2$). Podeu fer servir la comanda d’R lm.
+
+## Estimació del model
+```{r, echo=TRUE}
+
+attach(mydata)
+model_puntuacio_felicitat <- lm(HS~GpC+LE+GC, data=mydata)
+
+#mostrem el resum del model per explicar la puntuacuñi de felicitat HS, en funció de GpC, LE i GC
+summary(model_puntuacio_felicitat)
+```
+El resultat de la bondat de l’ajust a través del coeficient de determinació ($R^2$), amb la comanda d’R lm, és `r summary(model_puntuacio_felicitat)$r.squared `
+
+## Model de regressió lineal múltiple (regressors quantitatius i qualitatius)
+
+Estimar per mínims quadrats ordinaris un model lineal que expliqui la puntuació de felicitat (HS) d’un país en funció de quatre factors. A part dels tres anteriors (renda, esperança de vida en salut i corrupció) ara s’afegeix la regió del món (region). Posar com a categoria de referència la regió “Western Europe” (per a fer això cal usar factor combinat amb relevel(region, ref = “Western Europe”)).
+
+Mirar la bondat de l’ajust a través del coeficient de determinació ($R^2$) i comparar el resultat d’aquest model amb l’obtingut a l’apartat 1.1. Podeu fer servir la comanda d’R lm i usar el coeficient R-quadrat ajustat en la comparació. Interpreteu també el significat dels coeficients obtinguts i la seva significació.
+
+```{r, echo=TRUE}
+RwE = relevel(Region, ref = "Western Europe")
+model_regresio_lineal<- lm(HS~GpC+LE+GC+factor(RwE), data=mydata )
+summary(model_regresio_lineal)
+```
+
+El coeficient de la bondat de l’ajust del primer model és `r summary(model_puntuacio_felicitat)$r.squared ` i del segon és `r summary(model_regresio_lineal)$r.squared `. Per tant, podem dir que el segon model es millor i que la regió (Region) afecta significativament en el rank del Hapiness score.
+
+Podem observar que els atributs GC i GpC son importants, és a dir significatius, hi ha països amb una Gpc (renta per capita) i amb corrupció alta (GC) influeixen amb el seu valor HS, o veiem amb el nivell de significança
+
+## Efectuar una predicció de l’índex de felicitat amb els dos models
+
+Suposar un país de la regió d’Europa Occidental (Western Europe), amb una renda de 1.5, una esperança de vida en salut del 69% i un índex ed corrupció de 0.35 i fer la predicció amb els dos models. Interpretar els resultats.
+
+```{r, echo=TRUE}
+predict_data = data.frame(Region = "Western Europe", GpC=1.5, LE=0.69, GC=0.35)
+predict_data_primer_model = predict(model_puntuacio_felicitat, predict_data)
+predict_data_primer_model
+```
+
+
+```{r, echo=TRUE}
+predict_data = data.frame(RwE = "Western Europe", GpC=1.5, LE=0.69, GC=0.35)
+predict_data_segon_model = predict(model_regresio_lineal, predict_data)
+predict_data_segon_model
+```
+
+Pel que fa el primer models index de fecilitat seria `r predict_data_primer_model[1]` per al primer model i `r predict_data_segon_model[1]` per al segon.
+
+Podem veure que que l'index de felicitat de la regió d’Europa Occidental és unes dècimes superior en el segon model, ja havíem vist en la regressions anteriors.
+
+# Model de regressió logística
+
+Es vol mirar el fenòmen de la felicitat des d’un punt de vista del quins són els 32 països més feliços del món. Per tant es mirarà la probabilitat que un país estigui en aquest grup. Per a avaluar aquesta probabilitat farem un model de regressió logística on la variable dependent serà una variable binària que indicarà si el país te un lloc al rànking de les millors posicions fins a la 32 (inclosa). Aquesta variable s’anomenarà “best” i usarem la mostra disponible per a estimar el model amb les mateixes variables que al model 1.1.
+
+## Estimació d’un model de regressió logística
+
+Estimar el model de regressió logística on la variable dependent és “best”(definida anteriorment) i les explicatives són l’indicador de renda per càpita (GpC) i la corrupció (GC). 
+
+No volem posar l’esperança de vida perquè pensem que ja queda prou representada la riquesa per la renda per càpita. Mirar si hi ha algun dels regressors que té influència significativa (p-valor del contrast individual inferior al 5%).
+
+```{r, echo=TRUE}
+best=(mydata$HR<=32) #32 països més feliços del món
+summary(best)
+```
+Podem veure la variable binaria del 32 paisos mes feliços (TRUE) i la resta FALSE.
+
+Realitzem del model:
+```{r, echo=TRUE}
+model_regresio_logistica = glm(best~GpC+GC, family=binomial, data=mydata)
+summary(model_regresio_logistica)
+```
+
+En el resum (summary) observem que la renda per càpita o Gpc i la corrupció o GC són atributs significatius per al grup de 32 països mes feliços.
+
+## Predicció en el model lineal generalitzat (model de regressió logística)
+
+Usant el model anterior, calculeu la probabilitat de ser un dels 32 països més feliços del món per un país que té una renda de 1.5, i un índex de corrupció de 0.35.
+
+```{r, echo=TRUE}
+predict_data = data.frame(RwE = "Western Europe", GpC=1.5, GC=0.35)
+predicio_32 = predict(model_regresio_logistica, predict_data, type="response")
+predicio_32
+```
+
+Tal com es podia esperar, la possibilitat és alta, en aquest cast la predicció és `r predicio_32[1]`.
+
+## Millora del model
+
+Buscar un millor model a l’anterior posant-hi més variables explicatives. Proveu tres models regressors:
+
+* Model regressor que afegeix a l’anterior la variable llibertat (Freedom).
+* Model regressor que afegeix la regió.
+* Model regressor que afegeix llibertat i regió.
+
+Decidiu si prefereix el model inicial, el que té freedom, el que té regió o el que les té les dues. El criteri per decidir que el model ha millorat és el criteri AIC (amb les variables inicials del model 2.1 i el model actual que té una variable més). Com més petit és l’AIC millor és el model.
+
+### Model amb Freedom
+```{r, echo=TRUE}
+model_freedom = glm(best~GpC+GC+Freedom, family=binomial, data=mydata)
+summary(model_freedom)
+```
+
+### Model amb Region
+```{r, echo=TRUE}
+model_region = glm(best~GpC+GC+Region, family=binomial, data=mydata)
+summary(model_region)
+```
+
+### Model amb Freedom i Region
+```{r, echo=TRUE}
+model_freedom_region = glm(best~GpC+GC+Freedom+Region, family=binomial, data=mydata)
+summary(model_freedom_region)
+```
+
+Segons la variable AIC, el model, amb la variable dependent "best", ha millorat en cada variable explicativa que hem agregat, d'altra banda, hem vist que és més influyen la variable regió que el grau de llibertat.
+
+* AIC del model incial: `r AIC(model_regresio_logistica)`.
+* Model amb l'agregació de la variable explicatica Freedom: `r AIC(model_freedom)`.
+* Model amb l'agregació de la variable explicatica Region: `r AIC(model_region)`.
+* Model amb l'agregació de les variable explicatica Region i Freedom: `r AIC(model_freedom_region)`.
+
+Per tant, el model amb l'AIC més petit que correspon al millor és el que hem agregat els dos paràmetres, a més podem veure que l'agregació de variables redueix el nivell de significació de totes les variables explicatives.
+
+
+## Qualitat de l’ajust
+
+Feu la matriu de confusió del millor model de l’apartat 2.3 suposant un llindar de discriminació del 80%. Mireu quants falsos negatius hi ha i interpreteu què vol dir que siguin falsos negatius.
+
+### Matriu de confusió
+```{r, echo=TRUE}
+prob_matriu = predict(model_freedom_region, mydata, type="response")
+pred_mes_feliços <- ifelse(prob_matriu > 0.8, TRUE, FALSE)
+table(best, pred_mes_feliços)
+```
+
+En aquest cas tenim 12 falsos negatius (fn) que corresponen on no estan en el grup dels 32 països més feliços i el model predictiu els ha classificat en aquest grup.
+
+Generem una taula per veure-ho més clarament:
+
+### Taula de TP, TN, FP i FN
+```{r, echo=TRUE}
+performance_data<-data.frame(observed = best, predicted = pred_mes_feliços)
+tp<-sum(performance_data$observed==TRUE & performance_data$predicted==TRUE)
+tn<-sum(performance_data$observed==FALSE & performance_data$predicted==FALSE)
+fp<-sum(performance_data$observed==FALSE & performance_data$predicted==TRUE)
+fn<-sum(performance_data$observed==TRUE & performance_data$predicted==FALSE)
+data.frame(tp,tn,fp,fn)
+```
+### Taula de predició
+```{r, echo=TRUE}
+total <- nrow(performance_data)
+positive <- sum(performance_data$observed==TRUE)
+negative <- sum(performance_data$observed==FALSE)
+predicted_positive <- sum(performance_data$predicted==TRUE)
+predicted_negative <- sum(performance_data$predicted==FALSE)
+total <- nrow(performance_data)
+data.frame(positive, negative, predicted_positive, predicted_negative)
+```
+### Taula de precisió i ratio d'errors
+```{r, echo=TRUE}
+accuracy <- (tp+tn)/total
+error_rate <- (fp+fn)/total
+sensitivity <- tp/positive
+especificity <- tn/negative
+precision <- tp/predicted_positive
+npv <- tn / predicted_negative
+data.frame(accuracy,error_rate,sensitivity,especificity,precision,npv)
+```
+
+## La selecció dels millors països
+
+Establiu un nivell de probabilitat (llindar de discriminació a partir el qual penseu que el país té moltes possibilitats de ser entre els millors, per exemple podeu triar 80% com abans). Compareu el nivell de probabilitat que dóna el model amb el ranking del país i identifiqueu països que no s’han comportat segons l’esperat. Podeu fer aquesta comparació gràficament.
+
+```{r, echo=TRUE}
+mydata$prob_millors=predict(model_freedom_region, mydata, type="response")
+grup_millor_paisos=subset(mydata, prob_matriu>0.8)
+plot(grup_millor_paisos$prob_millors, grup_millor_paisos$HR)
+```
+
+Els països que no s'han comportat com s'espera són tots aquells de la part inferior de la gràfica, on entre 80% i 100% de possibilitats de ser països del grup dels 35 millors amb el rang de felicitat, però realment tenen un HR molt baix.
+
+## Corba ROC
+
+Feu el dibuix de la corba ROC (podeu usar la llibreria pROC i la comanda roc i el plot de l’objecte resultant). Calculeu l’AUROC usant també aquest paquet, auc(...) on heu de posat el nom de l’objecte roc. Interpreteu el resultat.
+
+Hem seleccionat el vector dels valors reals amb la variable best i el vector de probabilitats predites pel millor model, per obtenir la corba ROC i veure la qualitat de la predicció:
+```{r, echo=TRUE}
+corba_roc = roc(best, mydata$prob_millors, partial.auc.correct = TRUE, percent = TRUE , ci = TRUE, of = "se", colorize=TRUE, probability = TRUE)
+
+plot(x = corba_roc, ci.type="shape", lwd=2, colorize=TRUE)
+```
+
+La corba ROC és un gràfic per avaluar la bondat d'ajut en la regressió logística, cada punt de la corba correspon a un nivell llindar de discriminació en la matriu de confusió.
+
+El millor model és aquell que té una corba ROC el més prop possible de la cantonada superior esquerra del gràfic. En aquest com podem veure que s'ajusta bastant a la cantonada superior esquerra és un model predictiu que discrimina bé.
+
+
+```{r, echo=TRUE}
+resultat_auoc = auc(corba_roc)
+resultat_auoc
+
+```
+
+Per tenir una regla objectiva de comparació de les corbes ROC, es calcula l'àrea situada entre la corba i la diagonal, anomenada simplement AUROC. El valor mes alt correspon al millor model, en aquest el resultat de l'AUROC és `r resultat_auoc[1]`, sense dubte és un bon model.
+
+
+# Referencias
+
+* Multiple (Linear) Regression: https://www.statmethods.net/stats/regression.html
+* Regresió lineal: http://www.r-tutor.com/elementary-statistics/logistic-regression/significance-test-logistic-regression
+* pRoc Documentation: https://www.rdocumentation.org/packages/pROC/versions/1.11.0/topics/pROC-package
+* ROC Analysis: http://mlwiki.org/index.php/ROC_Analysis
